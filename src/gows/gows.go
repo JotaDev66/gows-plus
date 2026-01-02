@@ -27,6 +27,7 @@ type GoWS struct {
 	cancelContext       context.CancelFunc
 	container           *sqlstorage.GContainer
 	storageEventHandler *StorageEventHandler
+	eventHandlerID      uint32
 }
 
 func (gows *GoWS) reissueEvent(event interface{}) {
@@ -69,7 +70,7 @@ func (gows *GoWS) handleEvent(event interface{}) {
 }
 
 func (gows *GoWS) Start() error {
-	gows.AddEventHandler(gows.handleEvent)
+	gows.eventHandlerID = gows.AddEventHandler(gows.handleEvent)
 
 	// Not connected, listen for QR code events
 	if gows.Store.ID == nil {
@@ -101,12 +102,28 @@ func (gows *GoWS) listenQRCodeEvents() {
 }
 
 func (gows *GoWS) Stop() {
-	gows.Disconnect()
-	err := gows.container.Close()
-	if err != nil {
-		gows.Log.Errorf("Error closing container: %v", err)
+	if gows == nil {
+		return
 	}
-	close(gows.events)
+
+	// Prevent auto-reconnect and stop event emission before tearing down storage.
+	gows.EnableAutoReconnect = false
+	gows.InitialAutoReconnect = false
+	if gows.eventHandlerID != 0 {
+		gows.RemoveEventHandler(gows.eventHandlerID)
+	}
+
+	gows.Disconnect()
+	if gows.container != nil {
+		err := gows.container.Close()
+		if err != nil {
+			gows.Log.Errorf("Error closing container: %v", err)
+		}
+	}
+	if gows.events != nil {
+		close(gows.events)
+		gows.events = nil
+	}
 	gows.cancelContext()
 }
 
@@ -155,6 +172,7 @@ func BuildSession(
 		cancel,
 		container,
 		nil,
+		0,
 	}
 	gows.Storage = BuildStorage(container, gows)
 	gows.storageEventHandler = &StorageEventHandler{
