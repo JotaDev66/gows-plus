@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/devlikeapro/gows/gows"
 	gowsLog "github.com/devlikeapro/gows/log"
 	pb "github.com/devlikeapro/gows/proto"
@@ -15,7 +14,6 @@ import (
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/status"
 	"net"
-	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"runtime/debug"
@@ -91,21 +89,6 @@ func init() {
 	flag.StringVar(&pprofHost, "pprof-host", "localhost", "Host for pprof HTTP server")
 }
 
-func startPprofServer(log waLog.Logger) {
-	if !pprofFlag {
-		return
-	}
-
-	addr := fmt.Sprintf("%s:%d", pprofHost, pprofPort)
-	log.Infof("Starting pprof HTTP server on %s", addr)
-
-	go func() {
-		if err := http.ListenAndServe(addr, nil); err != nil {
-			log.Errorf("Failed to start pprof HTTP server: %v", err)
-		}
-	}()
-}
-
 func remove(path string) {
 	_ = os.Remove(path)
 }
@@ -116,7 +99,9 @@ func main() {
 	log.Infof("Maximum gRPC message size set to 512 MiB")
 
 	// Start pprof HTTP server if enabled
-	startPprofServer(log)
+	if pprofFlag {
+		StartPprofServer(log, pprofHost, pprofPort)
+	}
 
 	device := strings.TrimSpace(os.Getenv("WAHA_CLIENT_DEVICE_NAME"))
 	if device == "" {
