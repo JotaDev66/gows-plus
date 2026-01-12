@@ -74,6 +74,7 @@ func hasMediaPayload(msg *waE2E.Message) bool {
 	}
 	return msg.ImageMessage != nil ||
 		msg.VideoMessage != nil ||
+		msg.PtvMessage != nil ||
 		msg.AudioMessage != nil ||
 		msg.DocumentMessage != nil ||
 		msg.DocumentWithCaptionMessage != nil ||
