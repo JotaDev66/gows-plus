@@ -375,6 +375,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 			}
 			message.AudioMessage.ContextInfo = contextInfo
 		case __.MediaType_VIDEO:
+			// NOTE: Keep MediaType_VIDEO and MediaType_PTV in sync
 			mediaType = whatsmeow.MediaVideo
 			// Upload
 			mediaResponse, err = cli.UploadMedia(ctx, jid, req.Media.Content, mediaType)
@@ -405,6 +406,37 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 				JPEGThumbnail: thumbnail,
 			}
 			message.VideoMessage.ContextInfo = contextInfo
+		case __.MediaType_PTV:
+			// NOTE: Keep MediaType_VIDEO and MediaType_PTV in sync
+			mediaType = whatsmeow.MediaVideo
+			// Upload
+			mediaResponse, err = cli.UploadMedia(ctx, jid, req.Media.Content, mediaType)
+			if err != nil {
+				return nil, err
+			}
+
+			// Generate Thumbnail
+			thumbnail, err := media.VideoThumbnail(
+				req.Media.Content,
+				0,
+				struct{ Width int }{Width: 72},
+			)
+
+			if err != nil {
+				cli.Log.Infof("Failed to generate ptv thumbnail: %v", err)
+			}
+
+			message.PtvMessage = &waE2E.VideoMessage{
+				Mimetype:      proto.String(req.Media.Mimetype),
+				URL:           &mediaResponse.URL,
+				DirectPath:    &mediaResponse.DirectPath,
+				MediaKey:      mediaResponse.MediaKey,
+				FileEncSHA256: mediaResponse.FileEncSHA256,
+				FileSHA256:    mediaResponse.FileSHA256,
+				FileLength:    &mediaResponse.FileLength,
+				JPEGThumbnail: thumbnail,
+			}
+			message.PtvMessage.ContextInfo = contextInfo
 
 		case __.MediaType_DOCUMENT:
 			mediaType = whatsmeow.MediaDocument

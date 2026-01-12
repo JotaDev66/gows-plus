@@ -303,6 +303,7 @@ enum MediaType {
   AUDIO = 1;
   VIDEO = 2;
   DOCUMENT = 3;
+  PTV = 4;
 }
 
 message AudioInfo {
