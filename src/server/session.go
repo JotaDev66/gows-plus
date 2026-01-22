@@ -21,6 +21,9 @@ func addApplicationName(address string, name string) string {
 }
 
 func (s *Server) StartSession(ctx context.Context, req *__.StartSessionRequest) (*__.Empty, error) {
+	if req == nil || req.Config == nil || req.Config.Store == nil {
+		return nil, errors.New("missing session config")
+	}
 	dialect := req.Config.Store.Dialect
 	var address string
 	switch {
@@ -63,23 +66,51 @@ func (s *Server) StartSession(ctx context.Context, req *__.StartSessionRequest) 
 		return nil, err
 	}
 
-	// Subscribe to events
-	go func() {
-		for evt := range cli.GetEventChannel() {
-			s.SendEventToAllListeners(session, evt)
-		}
-	}()
+	s.eventSubsLock.Lock()
+	_, subscribed := s.eventSubs[session]
+	if !subscribed {
+		subCtx, cancel := context.WithCancel(context.Background())
+		s.eventSubs[session] = cancel
+		// Subscribe to events
+		go func() {
+			eventCh := cli.GetEventChannel()
+			for {
+				select {
+				case <-subCtx.Done():
+					return
+				case evt, ok := <-eventCh:
+					if !ok {
+						return
+					}
+					s.SendEventToAllListeners(session, evt)
+				}
+			}
+		}()
+	}
+	s.eventSubsLock.Unlock()
 
 	// Start the session in the background
 	go func() {
-		err = s.Sm.Start(session)
+		if startErr := s.Sm.Start(session); startErr != nil {
+			s.log.Errorf("Error starting session '%s': %v", session, startErr)
+		}
 	}()
 
 	return &__.Empty{}, nil
 }
 
 func (s *Server) StopSession(ctx context.Context, req *__.Session) (*__.Empty, error) {
-	s.Sm.Stop(req.GetId())
+	session := req.GetId()
+	s.eventSubsLock.Lock()
+	cancel, ok := s.eventSubs[session]
+	if ok {
+		delete(s.eventSubs, session)
+	}
+	s.eventSubsLock.Unlock()
+	if ok {
+		cancel()
+	}
+	s.Sm.Stop(session)
 	return &__.Empty{}, nil
 }
 
