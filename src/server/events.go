@@ -35,7 +35,13 @@ func (s *Server) StreamEvents(req *__.Session, stream grpc.ServerStreamingServer
 		select {
 		case <-stream.Context().Done():
 			return stream.Context().Err()
-		case event := <-listener:
+		case event, ok := <-listener:
+			if !ok {
+				return nil
+			}
+			if event == nil {
+				continue
+			}
 			// Remove * at the start if it's *
 			eventType := reflect.TypeOf(event).String()
 			eventType = strings.TrimPrefix(eventType, "*")
@@ -59,13 +65,16 @@ func (s *Server) StreamEvents(req *__.Session, stream grpc.ServerStreamingServer
 }
 
 func (s *Server) SendEventToAllListeners(session string, event interface{}) {
-	listeners := s.getListeners(session)
-	for _, listener := range listeners {
+	s.listenersLock.RLock()
+	defer s.listenersLock.RUnlock()
+
+	sessionListeners := s.listeners[session]
+	for id, listener := range sessionListeners {
 		// Drop the event if the listener buffer is full to avoid blocking and goroutine leaks.
 		select {
-		case listener.ch <- event:
+		case listener <- event:
 		default:
-			s.log.Warnf("Dropping event for slow listener %s, session %s", listener.id.String(), session)
+			s.log.Warnf("Dropping event for slow listener %s, session %s", id.String(), session)
 		}
 	}
 }
@@ -97,20 +106,4 @@ func (s *Server) removeListener(session string, id uuid.UUID) {
 		delete(s.listeners, session)
 	}
 	close(listener)
-}
-
-type listenerEntry struct {
-	id uuid.UUID
-	ch chan interface{}
-}
-
-func (s *Server) getListeners(session string) []listenerEntry {
-	s.listenersLock.RLock()
-	defer s.listenersLock.RUnlock()
-	sessionListeners := s.listeners[session]
-	listeners := make([]listenerEntry, 0, len(sessionListeners))
-	for id, listener := range sessionListeners {
-		listeners = append(listeners, listenerEntry{id: id, ch: listener})
-	}
-	return listeners
 }
