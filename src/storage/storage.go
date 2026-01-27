@@ -23,7 +23,10 @@ type MessageStorage interface {
 	GetLastMessagesInChats(filter ChatFilter, sortBy Sort, pagination Pagination) ([]*StoredMessage, error)
 	GetAllMessages(filters MessageFilter, sortBy Sort, pagination Pagination) ([]*StoredMessage, error)
 	GetChatMessages(jid types.JID, filters MessageFilter, pagination Pagination) ([]*StoredMessage, error)
+	// GetMessage fetches a message by ID without retries.
 	GetMessage(id types.MessageID) (*StoredMessage, error)
+	// GetMessageWithRetries fetches a message by ID with retries.
+	GetMessageWithRetries(id types.MessageID) (*StoredMessage, error)
 	DeleteChatMessages(jid types.JID, deleteBefore time.Time) error
 	DeleteMessage(id types.MessageID) error
 }

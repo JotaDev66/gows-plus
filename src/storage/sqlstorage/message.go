@@ -71,6 +71,10 @@ func (s SqlMessageStore) GetChatMessages(jid types.JID, filters storage.MessageF
 }
 
 func (s SqlMessageStore) GetMessage(id types.MessageID) (msg *storage.StoredMessage, err error) {
+	return s.GetById(id)
+}
+
+func (s SqlMessageStore) GetMessageWithRetries(id types.MessageID) (msg *storage.StoredMessage, err error) {
 	err = retry.Do(
 		func() error {
 			msg, err = s.GetById(id)

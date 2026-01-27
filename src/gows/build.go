@@ -63,7 +63,7 @@ func (gows *GoWS) BuildEdit(chat types.JID, id types.MessageID, newContent *waE2
 }
 
 func (gows *GoWS) PopulateContextInfoWithReply(info *waE2E.ContextInfo, replyToId types.MessageID) (*waE2E.ContextInfo, error) {
-	msg, err := gows.Storage.Messages.GetMessage(replyToId)
+	msg, err := gows.Storage.Messages.GetMessageWithRetries(replyToId)
 	if err != nil {
 		return info, err
 	}

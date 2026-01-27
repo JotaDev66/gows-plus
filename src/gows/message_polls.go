@@ -57,7 +57,7 @@ func (gows *GoWS) extractPollVotes(ctx context.Context, msg *events.Message) (*[
 	}
 	// Get a saved message
 	pollUpdate := msg.Message.GetPollUpdateMessage()
-	storedMessage, err := gows.Storage.Messages.GetMessage(pollUpdate.GetPollCreationMessageKey().GetID())
+	storedMessage, err := gows.Storage.Messages.GetMessageWithRetries(pollUpdate.GetPollCreationMessageKey().GetID())
 	if err != nil {
 		return nil, err
 	}

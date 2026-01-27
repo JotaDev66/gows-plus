@@ -251,7 +251,7 @@ func (st *StorageEventHandler) handleReceipt(event *events.Receipt) {
 	}
 	for _, id := range event.MessageIDs {
 		st.log.Debugf("Updating status for message %v(%v) to %v (receipt type: '%v')", event.Chat, id, status, event.Type.GoString())
-		msg, err := st.storage.Messages.GetMessage(id)
+		msg, err := st.storage.Messages.GetMessageWithRetries(id)
 		if errors.Is(err, storage.ErrNotFound) {
 			st.log.Debugf("Message %v(%v) not found", event.Chat, id)
 			continue

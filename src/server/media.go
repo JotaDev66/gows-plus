@@ -30,7 +30,7 @@ func (s *Server) DownloadMedia(ctx context.Context, req *__.DownloadMediaRequest
 	// If parsing JSON failed - fetch it from storage
 	if msg == nil && req.MessageId != "" {
 		cli.Log.Debugf("Fetching message from storage '%s'", req.MessageId)
-		storedMessage, err := cli.Storage.Messages.GetMessage(req.GetMessageId())
+		storedMessage, err := cli.Storage.Messages.GetMessageWithRetries(req.GetMessageId())
 		if err != nil {
 			cli.Log.Warnf("Failed to fetch message '%s' from storage: %v", req.MessageId, err)
 		}

@@ -108,7 +108,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 		if jid.Server == types.NewsletterServer {
 			var serverId int
 			if vote.PollServerId == nil {
-				stored, err := cli.Storage.Messages.GetMessage(vote.PollMessageId)
+				stored, err := cli.Storage.Messages.GetMessageWithRetries(vote.PollMessageId)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get poll creation message %s in %s: %w", vote.PollMessageId, jid, err)
 				}
@@ -136,7 +136,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 			}
 			return &msg, nil
 		} else {
-			stored, err := cli.Storage.Messages.GetMessage(vote.PollMessageId)
+			stored, err := cli.Storage.Messages.GetMessageWithRetries(vote.PollMessageId)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get poll creation message %s in %s: %w", vote.PollMessageId, jid, err)
 			}
@@ -518,7 +518,7 @@ func (s *Server) SendReaction(ctx context.Context, req *__.MessageReaction) (*__
 
 		if serverID == 0 || err != nil {
 			// It's not int - try to get it from storage
-			storedMsg, err := cli.Storage.Messages.GetMessage(req.MessageId)
+			storedMsg, err := cli.Storage.Messages.GetMessageWithRetries(req.MessageId)
 			if err != nil {
 				cli.Log.Debugf("failed to get message (%s) when sending reaction to newsletter: %v", req.MessageId, err)
 			}
@@ -743,7 +743,7 @@ func (s *Server) CancelEventMessage(ctx context.Context, req *__.CancelEventMess
 		return nil, err
 	}
 
-	eventMessage, err := cli.Storage.Messages.GetMessage(req.MessageId)
+	eventMessage, err := cli.Storage.Messages.GetMessageWithRetries(req.MessageId)
 	if err != nil {
 		return nil, err
 	}
