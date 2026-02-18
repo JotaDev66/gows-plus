@@ -12,6 +12,7 @@ import (
 
 	"github.com/devlikeapro/gows/media"
 	__ "github.com/devlikeapro/gows/proto"
+	"github.com/devlikeapro/gows/storage"
 	"go.mau.fi/util/random"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -264,7 +265,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 		}
 	} else if req.Media == nil {
 		// Text Message
-		message = cli.BuildTextMessage(req.Text)
+		message = cli.BuildExtendedTextMessage(req.Text)
 		// Link Preview
 		if req.LinkPreview {
 			var preview *media.LinkPreview
@@ -674,10 +675,20 @@ func (s *Server) EditMessage(ctx context.Context, req *__.EditMessageRequest) (*
 		return nil, err
 	}
 
-	message := cli.BuildConversationMessage(req.Text)
-	if req.LinkPreview && media.ExtractUrlFromText(req.Text) != "" {
-		// Switch to text message if it has URL and link preview is requested
-		message = cli.BuildTextMessage(req.Text)
+	var originalMessage *waE2E.Message
+	storedMsg, err := cli.Storage.Messages.GetMessageWithRetries(req.MessageId)
+	if err == nil && storedMsg != nil && storedMsg.Message != nil {
+		originalMessage = storedMsg.Message.Message
+	} else if err != nil {
+		var storageDisabledErr storage.StorageDisabledError
+		if !errors.Is(err, storage.ErrNotFound) && !errors.As(err, &storageDisabledErr) {
+			cli.Log.Warnf("Failed to fetch original message %s for edit: %v", req.MessageId, err)
+		}
+	}
+
+	message := cli.BuildEditedMessage(jid, req.Text, originalMessage)
+	// Only add link preview if it's an edit of a text message and link preview is requested.
+	if req.LinkPreview && message.ExtendedTextMessage != nil {
 		cli.AddLinkPreviewSafe(jid, message.ExtendedTextMessage, req.LinkPreviewHighQuality, nil)
 	}
 

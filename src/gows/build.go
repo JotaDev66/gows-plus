@@ -21,13 +21,74 @@ func (gows *GoWS) BuildConversationMessage(text string) *waE2E.Message {
 	return &message
 }
 
-// BuildTextMessage builds a text message and adds a link preview if requested.
-func (gows *GoWS) BuildTextMessage(text string) *waE2E.Message {
+// BuildExtendedTextMessage builds a text message and adds a link preview if requested.
+func (gows *GoWS) BuildExtendedTextMessage(text string) *waE2E.Message {
 	message := waE2E.Message{}
 	message.ExtendedTextMessage = &waE2E.ExtendedTextMessage{
 		Text: proto.String(text),
 	}
 	return &message
+}
+
+// BuildEditedMessage builds a new message for editing an existing message,
+// preserving the original message's type and context info when possible.
+func (gows *GoWS) BuildEditedMessage(
+	jid types.JID,
+	text string,
+	originalMessage *waE2E.Message,
+) *waE2E.Message {
+	switch {
+	case originalMessage != nil && originalMessage.GetConversation() != "":
+		// Keep the current behavior for plain conversation messages.
+		return gows.BuildConversationMessage(text)
+	case originalMessage != nil && originalMessage.GetImageMessage() != nil:
+		return &waE2E.Message{
+			ImageMessage: &waE2E.ImageMessage{
+				Caption:     proto.String(text),
+				ContextInfo: originalMessage.GetImageMessage().GetContextInfo(),
+			},
+		}
+	case originalMessage != nil && originalMessage.GetVideoMessage() != nil:
+		return &waE2E.Message{
+			VideoMessage: &waE2E.VideoMessage{
+				Caption:     proto.String(text),
+				ContextInfo: originalMessage.GetVideoMessage().GetContextInfo(),
+			},
+		}
+	case originalMessage != nil && originalMessage.GetDocumentMessage() != nil:
+		return &waE2E.Message{
+			DocumentMessage: &waE2E.DocumentMessage{
+				Caption:     proto.String(text),
+				ContextInfo: originalMessage.GetDocumentMessage().GetContextInfo(),
+			},
+		}
+	case originalMessage != nil &&
+		originalMessage.GetDocumentWithCaptionMessage() != nil &&
+		originalMessage.GetDocumentWithCaptionMessage().GetMessage() != nil &&
+		originalMessage.GetDocumentWithCaptionMessage().GetMessage().GetDocumentMessage() != nil:
+		return &waE2E.Message{
+			DocumentWithCaptionMessage: &waE2E.FutureProofMessage{
+				Message: &waE2E.Message{
+					DocumentMessage: &waE2E.DocumentMessage{
+						Caption: proto.String(text),
+						ContextInfo: originalMessage.GetDocumentWithCaptionMessage().
+							GetMessage().
+							GetDocumentMessage().
+							GetContextInfo(),
+					},
+				},
+			},
+		}
+	default:
+		var contextInfo = ExtractContextInfo(&events.Message{Message: originalMessage})
+		message := &waE2E.Message{
+			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+				Text:        proto.String(text),
+				ContextInfo: contextInfo,
+			},
+		}
+		return message
+	}
 }
 
 // BuildEdit builds a message edit message using the given variables.
@@ -124,6 +185,8 @@ func ExtractContextInfo(event *events.Message) *waE2E.ContextInfo {
 		return msg.AudioMessage.ContextInfo
 	case msg.DocumentMessage != nil:
 		return msg.DocumentMessage.ContextInfo
+	case msg.DocumentWithCaptionMessage != nil && msg.DocumentWithCaptionMessage.Message != nil && msg.DocumentWithCaptionMessage.Message.DocumentMessage != nil:
+		return msg.DocumentWithCaptionMessage.Message.DocumentMessage.ContextInfo
 	case msg.StickerMessage != nil:
 		return msg.StickerMessage.ContextInfo
 	case msg.ContactsArrayMessage != nil:
