@@ -44,7 +44,11 @@ func (s *Server) GetMessages(ctx context.Context, req *__.GetMessagesRequest) (*
 	if sort.Order == "" {
 		sort.Order = storage.SortDesc
 	}
-	messages, err := cli.Storage.Messages.GetAllMessages(*filters, sort, pagination)
+	merge := true
+	if req.GetMerge() != nil {
+		merge = req.GetMerge().Value
+	}
+	messages, err := cli.Storage.Messages.GetAllMessages(*filters, sort, pagination, merge)
 	if err != nil {
 		return nil, err
 	}
@@ -114,18 +118,22 @@ func (s *Server) GetChats(ctx context.Context, req *__.GetChatsRequest) (*__.Jso
 	// Create an empty filter
 	filter := storage.ChatFilter{}
 	if req.GetFilter() != nil {
-		jids := make([]types.JID, len(req.Filter.Jids))
-		for _, jid := range req.GetFilter().Jids {
-			jid, err := types.ParseJID(jid)
+		jids := make([]types.JID, 0, len(req.GetFilter().Jids))
+		for _, jidStr := range req.GetFilter().Jids {
+			jid, err := types.ParseJID(jidStr)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing jid %v: %w", jid, err)
+				return nil, fmt.Errorf("error parsing jid %v: %w", jidStr, err)
 			}
 			jids = append(jids, jid)
 		}
 		filter.Jids = jids
 	}
 
-	chats, err := cli.Storage.Chats.GetChats(filter, sort, pagination)
+	merge := true
+	if req.GetMerge() != nil {
+		merge = req.GetMerge().Value
+	}
+	chats, err := cli.Storage.Chats.GetChats(filter, sort, pagination, merge)
 	if err != nil {
 		return nil, err
 	}

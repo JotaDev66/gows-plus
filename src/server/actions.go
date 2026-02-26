@@ -84,7 +84,12 @@ func (s *Server) MarkChatUnread(ctx context.Context, req *__.ChatUnreadRequest) 
 	// Try to fetch the last 1 message from storage for this chat
 	var lastKeys []*waCommon.MessageKey
 	var lastMessageTimestamp = time.Now()
-	messages, err := cli.Storage.Messages.GetChatMessages(jid, storage.MessageFilter{}, storage.Pagination{Limit: 1, Offset: 0})
+	messages, err := cli.Storage.Messages.GetChatMessages(
+		jid,
+		storage.MessageFilter{},
+		storage.Pagination{Limit: 1, Offset: 0},
+		true,
+	)
 	if err != nil {
 		// If storage access fails, log and continue without the last message key
 		cli.Log.Errorf("MarkChatUnread: failed to fetch last message for %s: %v", jid, err)

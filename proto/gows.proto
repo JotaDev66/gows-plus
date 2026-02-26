@@ -693,6 +693,7 @@ message GetMessagesRequest {
   MessageFilters filters = 2;
   Pagination pagination = 3;
   SortBy sortBy = 4;
+  OptionalBool merge = 5;
 }
 
 //
@@ -724,6 +725,7 @@ message GetChatsRequest {
   SortBy sortBy = 2;
   Pagination pagination = 3;
   ChatFilter filter = 4;
+  OptionalBool merge = 5;
 }
 
 //

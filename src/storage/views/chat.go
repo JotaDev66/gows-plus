@@ -21,11 +21,11 @@ func NewChatView(message storage.MessageStorage, contacts storage.ContactStorage
 	}
 }
 
-func (s ChatView) GetChats(filter storage.ChatFilter, sortBy storage.Sort, pagination storage.Pagination) ([]*storage.StoredChat, error) {
+func (s ChatView) GetChats(filter storage.ChatFilter, sortBy storage.Sort, pagination storage.Pagination, merge bool) ([]*storage.StoredChat, error) {
 	if sortBy.Field == "id" {
 		sortBy.Field = "jid"
 	}
-	messages, err := s.Messages.GetLastMessagesInChats(filter, sortBy, pagination)
+	messages, err := s.Messages.GetLastMessagesInChats(filter, sortBy, pagination, merge)
 	if err != nil {
 		return nil, err
 	}

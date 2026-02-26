@@ -19,15 +19,15 @@ func (s MessageStorage) UpsertOneMessage(msg *storage.StoredMessage) error {
 	return nil
 }
 
-func (s MessageStorage) GetLastMessagesInChats(filter storage.ChatFilter, sortBy storage.Sort, pagination storage.Pagination) ([]*storage.StoredMessage, error) {
+func (s MessageStorage) GetLastMessagesInChats(filter storage.ChatFilter, sortBy storage.Sort, pagination storage.Pagination, merge bool) ([]*storage.StoredMessage, error) {
 	return []*storage.StoredMessage{}, nil
 }
 
-func (s MessageStorage) GetAllMessages(filters storage.MessageFilter, sortBy storage.Sort, pagination storage.Pagination) ([]*storage.StoredMessage, error) {
+func (s MessageStorage) GetAllMessages(filters storage.MessageFilter, sortBy storage.Sort, pagination storage.Pagination, merge bool) ([]*storage.StoredMessage, error) {
 	return []*storage.StoredMessage{}, nil
 }
 
-func (s MessageStorage) GetChatMessages(jid types.JID, filters storage.MessageFilter, pagination storage.Pagination) ([]*storage.StoredMessage, error) {
+func (s MessageStorage) GetChatMessages(jid types.JID, filters storage.MessageFilter, pagination storage.Pagination, merge bool) ([]*storage.StoredMessage, error) {
 	return []*storage.StoredMessage{}, nil
 }
 
