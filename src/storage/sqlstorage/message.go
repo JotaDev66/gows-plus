@@ -38,21 +38,25 @@ func (s SqlMessageStore) GetAllMessages(filters storage.MessageFilter, sort stor
 	conditions := make([]sq.Sqlizer, 0)
 	if filters.Jid != nil {
 		target := *filters.Jid
-		var err error
+		jidColumn := fmt.Sprintf("%s.jid", s.table.Name)
 		if merge {
+			var err error
 			target, err = s.canonicalizeJID(*filters.Jid)
 			if err != nil {
 				return nil, err
 			}
-		}
-		expr := fmt.Sprintf("%s.jid", s.table.Name)
-		if merge {
-			expr, err = s.primaryJIDExpression(s.table.Name)
+			// Resolve all LID JIDs that map to this phone number in one pre-lookup,
+			// so the WHERE clause uses exact equality and the (jid, timestamp) index.
+			lids, err := s.reverseLookupLIDs(target.User)
 			if err != nil {
 				return nil, err
 			}
+			jidStrs := append([]string{target.String()}, lids...)
+			expr, args := buildInExpression(jidColumn, jidStrs)
+			conditions = append(conditions, sq.Expr(expr, args...))
+		} else {
+			conditions = append(conditions, sq.Eq{jidColumn: target.String()})
 		}
-		conditions = append(conditions, sq.Expr(expr+" = ?", target.String()))
 	}
 	if filters.TimestampGte != nil {
 		conditions = append(conditions, sq.GtOrEq{"timestamp": filters.TimestampGte})
@@ -191,15 +195,22 @@ func (s SqlMessageStore) GetLastMessagesInChats(filter storage.ChatFilter, sortB
 		From(s.table.Name).
 		Where("id IN (" + subQueryText + ")")
 	if len(filter.Jids) > 0 {
-		targets, err := s.targetJIDStrings(filter.Jids, merge)
-		if err != nil {
-			return nil, err
+		rawJidColumn := fmt.Sprintf("%s.jid", s.table.Name)
+		var allJidStrs []string
+		if merge {
+			// Expand each canonical JID to include its known LID variants so we can
+			// filter on the raw jid column and let the (jid, timestamp) index be used.
+			allJidStrs, err = s.expandJIDsWithLIDs(filter.Jids)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			allJidStrs, err = s.targetJIDStrings(filter.Jids, false)
+			if err != nil {
+				return nil, err
+			}
 		}
-		exprColumn := primaryExpr
-		if !merge {
-			exprColumn = fmt.Sprintf("%s.jid", s.table.Name)
-		}
-		expr, args := buildInExpression(exprColumn, targets)
+		expr, args := buildInExpression(rawJidColumn, allJidStrs)
 		sql = sql.Where(sq.Expr(expr, args...))
 	}
 
@@ -281,6 +292,27 @@ func (s SqlMessageStore) targetJIDStrings(jids []types.JID, merge bool) ([]strin
 		}
 		seen[str] = struct{}{}
 		result = append(result, str)
+	}
+	return result, nil
+}
+
+// reverseLookupLIDs returns all "@lid" JID strings that map to the given phone number.
+// This enables building a WHERE jid IN (...) clause instead of a per-row correlated subquery.
+func (s SqlMessageStore) reverseLookupLIDs(pn string) ([]string, error) {
+	query, args, err := sq.Select("lid").
+		From("whatsmeow_lid_map").
+		Where(sq.Eq{"pn": pn}).
+		ToSql()
+	if err != nil {
+		return nil, err
+	}
+	var lids []string
+	if err := s.db.Select(&lids, query, args...); err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(lids))
+	for _, lid := range lids {
+		result = append(result, lid+"@"+types.HiddenUserServer)
 	}
 	return result, nil
 }
