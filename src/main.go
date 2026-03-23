@@ -18,7 +18,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
-	"strings"
 	"time"
 )
 
@@ -115,17 +114,9 @@ func main() {
 		StartPprofServer(log, pprofHost, pprofPort)
 	}
 
-	device := strings.TrimSpace(os.Getenv("WAHA_CLIENT_DEVICE_NAME"))
-	if device == "" {
-		device = "Ubuntu"
-	}
-	browser := strings.TrimSpace(os.Getenv("WAHA_CLIENT_BROWSER_NAME"))
-	if browser == "" {
-		browser = "Firefox"
-	}
-
-	log.Infof("Using device name: '%s', browser name: '%s'", device, browser)
-	gows.SetDeviceAndBrowser(device, browser)
+	clientCfg := getClientConfig()
+	log.Infof("Using device name: '%s', browser name: '%s'", clientCfg.DeviceName, clientCfg.BrowserName)
+	gows.SetDeviceAndBrowser(clientCfg.DeviceName, clientCfg.BrowserName)
 
 	// Build the server
 	grpcServer := buildGrpcServer(log)

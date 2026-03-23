@@ -21,6 +21,7 @@ require (
 )
 
 require (
+	github.com/caarlos0/env/v11 v11.4.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/samber/lo v1.49.1
 	go.mau.fi/util v0.9.6
