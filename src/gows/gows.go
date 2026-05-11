@@ -58,11 +58,19 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 		}
 
 	case *events.Message:
-		data = event
-		if event.(*events.Message).Message.GetEncEventResponseMessage() != nil {
-			go gows.handleEncEventResponse(gows.Context, event.(*events.Message))
-		} else if event.(*events.Message).Message.GetPollUpdateMessage() != nil {
-			go gows.handleEncPollVote(gows.Context, event.(*events.Message))
+		msg := event.(*events.Message)
+		sem := msg.Message.GetSecretEncryptedMessage()
+		if sem != nil && sem.GetSecretEncType() == waE2E.SecretEncryptedMessage_MESSAGE_EDIT {
+			go gows.handleSecretMessageEdit(gows.Context, msg)
+			return
+		} else if msg.Message.GetEncEventResponseMessage() != nil {
+			data = event
+			go gows.handleEncEventResponse(gows.Context, msg)
+		} else if msg.Message.GetPollUpdateMessage() != nil {
+			data = event
+			go gows.handleEncPollVote(gows.Context, msg)
+		} else {
+			data = event
 		}
 
 	case *events.MediaRetry:
@@ -85,6 +93,7 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 
 	gows.emitEvent(data)
 }
+
 
 func (gows *GoWS) handleEvent(event interface{}) {
 	go gows.reissueEvent(event)
