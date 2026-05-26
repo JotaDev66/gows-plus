@@ -326,6 +326,8 @@ message AudioInfo {
 
 message VideoInfo {
   float duration = 1;
+  bool gifPlayback = 2;
+  uint32 externalShareFullVideoDurationInSeconds = 3;
 }
 
 message Media {

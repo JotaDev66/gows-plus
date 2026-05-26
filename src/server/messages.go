@@ -409,17 +409,27 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 				cli.Log.Infof("Failed to generate video thumbnail: %v", err)
 			}
 
+			var gifPlayback *bool
+			var externalShareFullVideoDurationInSeconds *uint32
+			if req.Media.Video != nil && req.Media.Video.GifPlayback {
+				t := true
+				gifPlayback = &t
+				zero := uint32(req.Media.Video.ExternalShareFullVideoDurationInSeconds)
+				externalShareFullVideoDurationInSeconds = &zero
+			}
 			message.VideoMessage = &waE2E.VideoMessage{
-				Caption:       proto.String(req.Text),
-				Mimetype:      proto.String(req.Media.Mimetype),
-				URL:           &mediaResponse.URL,
-				DirectPath:    &mediaResponse.DirectPath,
-				MediaKey:      mediaResponse.MediaKey,
-				FileEncSHA256: mediaResponse.FileEncSHA256,
-				FileSHA256:    mediaResponse.FileSHA256,
-				FileLength:    &mediaResponse.FileLength,
-				Seconds:       durationSeconds,
-				JPEGThumbnail: thumbnail,
+				Caption:                                proto.String(req.Text),
+				Mimetype:                               proto.String(req.Media.Mimetype),
+				URL:                                    &mediaResponse.URL,
+				DirectPath:                             &mediaResponse.DirectPath,
+				MediaKey:                               mediaResponse.MediaKey,
+				FileEncSHA256:                          mediaResponse.FileEncSHA256,
+				FileSHA256:                             mediaResponse.FileSHA256,
+				FileLength:                             &mediaResponse.FileLength,
+				Seconds:                                durationSeconds,
+				JPEGThumbnail:                          thumbnail,
+				GifPlayback:                            gifPlayback,
+				ExternalShareFullVideoDurationInSeconds: externalShareFullVideoDurationInSeconds,
 			}
 			message.VideoMessage.ContextInfo = contextInfo
 		case __.MediaType_PTV:
