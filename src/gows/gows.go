@@ -12,6 +12,7 @@ import (
 	_ "github.com/jackc/pgx/v5"     // Import the Postgres driver
 	_ "github.com/mattn/go-sqlite3" // Import the SQLite driver
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -108,7 +109,48 @@ func (gows *GoWS) Start() error {
 		gows.listenQRCodeEvents()
 	}
 
-	return gows.Connect()
+	if err := gows.Connect(); err != nil {
+		return err
+	}
+
+	// Ensure the NCT salt is populated for already-registered sessions.
+	// Sessions upgraded to DB schema v14 have an empty whatsmeow_nct_salt table.
+	// The regular on-connect FetchAppState uses onlyIfNotSynced=true and skips
+	// regular_high when its version is already > 0, so the salt is never written.
+	// Without the salt, generateCsToken returns nil; if tctoken is also absent,
+	// WhatsApp rejects every outbound DM with error 400 until the session is
+	// restarted (which triggers handleAppStateNotification with onlyIfNotSynced=false).
+	// We reproduce that forced re-sync here so the session heals on its own.
+	if gows.Store.ID != nil {
+		go gows.ensureNCTSalt()
+	}
+
+	return nil
+}
+
+// ensureNCTSalt forces a regular_high app-state sync when the NCT salt table
+// is empty. It waits a short time after Connect() to let whatsmeow complete its
+// own post-connect sync before checking.
+func (gows *GoWS) ensureNCTSalt() {
+	select {
+	case <-gows.Context.Done():
+		return
+	case <-time.After(5 * time.Second):
+	}
+
+	salt, err := gows.Store.NCTSalt.GetNCTSalt(gows.Context)
+	if err != nil {
+		gows.Log.Errorf("Failed to read NCT salt: %v", err)
+		return
+	}
+	if len(salt) > 0 {
+		return
+	}
+
+	gows.Log.Infof("NCT salt is empty — forcing regular_high app-state sync")
+	if err := gows.FetchAppState(gows.Context, appstate.WAPatchRegularHigh, false, false); err != nil {
+		gows.Log.Errorf("Failed to force regular_high app-state sync: %v", err)
+	}
 }
 
 func (gows *GoWS) listenQRCodeEvents() {
