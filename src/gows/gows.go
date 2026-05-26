@@ -102,6 +102,12 @@ func (gows *GoWS) handleEvent(event interface{}) {
 }
 
 func (gows *GoWS) Start() error {
+	// Guard against double-registration if Start is called more than once without Stop.
+	// AddEventHandler appends without checking for existing handlers, so a stale
+	// handler would leak and cause every event to be emitted twice into gows.events.
+	if gows.eventHandlerID != 0 {
+		gows.RemoveEventHandler(gows.eventHandlerID)
+	}
 	gows.eventHandlerID = gows.AddEventHandler(gows.handleEvent)
 
 	// Not connected, listen for QR code events
