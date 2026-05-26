@@ -40,26 +40,34 @@ func (gows *GoWS) DownloadAnyMedia(ctx context.Context, msg *waE2E.Message) (dat
 	}
 }
 
-// DownloadAnyMediaWithRetry wraps DownloadAnyMedia and, on HTTP 403, requests the
-// sender's phone to re-upload the media via whatsmeow's media-retry protocol.
+// DownloadAnyMediaWithRetry wraps DownloadAnyMedia and, on HTTP 403 or a CDN
+// hash mismatch (ErrInvalidMediaEncSHA256), requests the sender's phone to
+// re-upload the media via whatsmeow's media-retry protocol.
 // On a successful retry the fresh DirectPath is used for a second download attempt.
+//
+// ErrInvalidMediaEncSHA256 ("hash of media ciphertext doesn't match") means the
+// CDN object at the message's directPath has been replaced with a different upload
+// (e.g. a forwarded image whose original CDN slot was recycled).  The phone
+// re-uploads and returns a fresh path — same recovery path as the 403 case.
 func (gows *GoWS) DownloadAnyMediaWithRetry(
 	ctx context.Context,
 	msg *waE2E.Message,
 	info *types.MessageInfo,
 ) ([]byte, error) {
 	data, err := gows.DownloadAnyMedia(ctx, msg)
-	if !errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) {
+	retriable := errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) ||
+		errors.Is(err, whatsmeow.ErrInvalidMediaEncSHA256)
+	if !retriable {
 		return data, err
 	}
 
 	mediaKey := extractMediaKey(msg)
 	if len(mediaKey) == 0 {
-		gows.Log.Warnf("No media key found for retry of '%s', returning original 403", info.ID)
+		gows.Log.Warnf("No media key found for retry of '%s', returning original error: %v", info.ID, err)
 		return nil, err
 	}
 
-	gows.Log.Infof("Got 403 for '%s', requesting media re-upload from phone", info.ID)
+	gows.Log.Infof("Got retriable media error for '%s' (%v), requesting media re-upload from phone", info.ID, err)
 	retryEvt, retryErr := gows.requestAndWaitForMediaRetry(ctx, info, mediaKey)
 	if retryErr != nil {
 		gows.Log.Errorf("Media retry request for '%s' failed: %v", info.ID, retryErr)
