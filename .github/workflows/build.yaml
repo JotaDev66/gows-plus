@@ -6,7 +6,7 @@ on:
       - '*'
 
 env:
-  TARGET_REPO: devlikeapro/gows
+  TARGET_REPO: devlikeapro/gows-plus
   PROTO_SRC_DIR: proto
 
 jobs:
