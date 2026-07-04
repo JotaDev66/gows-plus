@@ -39,6 +39,7 @@ type activeCall struct {
 	started bool
 	source  *FileAudioSource
 	sink    *FileAudioSink
+	bridge  *Bridge
 }
 
 type Controller struct {
@@ -99,6 +100,33 @@ func (c *Controller) EndCall(ctx context.Context, callID string) error {
 		return fmt.Errorf("no call with id %s", callID)
 	}
 	return ac.cm.EndCall(ctx, core.EndCallReasonUserEnded)
+}
+
+// WebRTC answers a browser SDP offer for the given call, opening the PCM data
+// channel bridge (browser mic -> call uplink, peer audio -> browser). Returns
+// the SDP answer.
+func (c *Controller) WebRTC(callID, sdpOffer string) (string, error) {
+	ac, ok := c.get(callID)
+	if !ok {
+		return "", fmt.Errorf("no call with id %s", callID)
+	}
+	bridge, answer, err := NewBridge(sdpOffer, c.log)
+	if err != nil {
+		return "", err
+	}
+	bridge.OnBrowserPCM = func(pcm []float32) {
+		ac.cm.FeedCapturedPCM(pcm)
+	}
+	bridge.OnTerminalICE = func() {
+		go c.EndCall(context.Background(), callID)
+	}
+	c.mu.Lock()
+	if ac.bridge != nil {
+		ac.bridge.Close()
+	}
+	ac.bridge = bridge
+	c.mu.Unlock()
+	return answer, nil
 }
 
 func (c *Controller) HandleEvent(evt any) {
@@ -188,8 +216,13 @@ func (c *Controller) wire(ac *activeCall, callID string) {
 	}
 	cm.OnPeerAudio = func(pcm []float32) {
 		c.mu.Lock()
+		bridge := ac.bridge
 		sink := ac.sink
 		c.mu.Unlock()
+		if bridge != nil {
+			_ = bridge.WritePCM(pcm)
+			return
+		}
 		if sink != nil {
 			_ = sink.WritePCM(pcm)
 		}
@@ -250,6 +283,9 @@ func (c *Controller) cleanup(callID string) {
 	}
 	if ac.sink != nil {
 		ac.sink.Close()
+	}
+	if ac.bridge != nil {
+		ac.bridge.Close()
 	}
 }
 
