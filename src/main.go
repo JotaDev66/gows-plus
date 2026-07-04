@@ -118,6 +118,10 @@ func main() {
 	log.Infof("Using device name: '%s', browser name: '%s'", clientCfg.DeviceName, clientCfg.BrowserName)
 	gows.SetDeviceAndBrowser(clientCfg.DeviceName, clientCfg.BrowserName)
 
+	statusCfg := getStatusConfig()
+	log.Infof("Status broadcast participants batch size: %d", statusCfg.ParticipantsBatchSize)
+	gows.SetStatusParticipantsBatchSize(statusCfg.ParticipantsBatchSize)
+
 	// Build the server
 	grpcServer := buildGrpcServer(log)
 	// Open unix socket

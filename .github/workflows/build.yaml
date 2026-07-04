@@ -6,7 +6,7 @@ on:
       - '*'
 
 env:
-  TARGET_REPO: devlikeapro/gows
+  TARGET_REPO: JotaDev66/gows-plus
   PROTO_SRC_DIR: proto
 
 jobs:
@@ -65,8 +65,11 @@ jobs:
     name: Publish Release
     needs: [ build-binaries, collect-proto ]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download all artifacts
@@ -74,18 +77,22 @@ jobs:
         with:
           path: artifacts
 
-      - name: Setup GitHub CLI
-        env:
-          CLI_GH_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
-        run: |
-          gh auth login --with-token <<< "$CLI_GH_TOKEN"
-          gh config set prompt disabled
+      - name: Configure GitHub CLI
+        run: gh config set prompt disabled
 
-      - name: Create new release
+#      - name: Create new release
+#        run: |
+#          gh release create "$RELEASE_TAG" \
+#            --repo "$TARGET_REPO" \
+#            --title "$RELEASE_TAG"
+
+      - name: Create new release (if missing)
         run: |
+          gh release view "$RELEASE_TAG" --repo "$TARGET_REPO" >/dev/null 2>&1 || \
           gh release create "$RELEASE_TAG" \
             --repo "$TARGET_REPO" \
-            --title "$RELEASE_TAG"
+            --title "$RELEASE_TAG" \
+            --notes "Native audio calls build"
 
       - name: Upload release assets
         run: |

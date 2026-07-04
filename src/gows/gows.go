@@ -2,16 +2,19 @@ package gows
 
 import (
 	"context"
+	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/devlikeapro/gows/storage"
 	"github.com/devlikeapro/gows/storage/sqlstorage"
+	"github.com/devlikeapro/gows/voip/callctl"
+	_ "github.com/jackc/pgx/v5" // Import the Postgres driver
 	"github.com/jellydator/ttlcache/v3"
-	_ "github.com/jackc/pgx/v5"     // Import the Postgres driver
 	_ "github.com/mattn/go-sqlite3" // Import the SQLite driver
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -36,6 +39,8 @@ type GoWS struct {
 	// This lets subsequent download attempts reuse the fresh DirectPath without
 	// sending another receipt, even if the first waiter already timed out.
 	mediaRetryEvents *ttlcache.Cache[types.MessageID, *events.MediaRetry]
+	// Calls orchestrates native WhatsApp audio calls for this session.
+	Calls *callctl.Controller
 }
 
 func (gows *GoWS) reissueEvent(event interface{}) {
@@ -94,13 +99,21 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 	gows.emitEvent(data)
 }
 
-
 func (gows *GoWS) handleEvent(event interface{}) {
 	go gows.reissueEvent(event)
 	go gows.storageEventHandler.handleEvent(event)
+	if gows.Calls != nil {
+		go gows.Calls.HandleEvent(event)
+	}
 }
 
 func (gows *GoWS) Start() error {
+	// Guard against double-registration if Start is called more than once without Stop.
+	// AddEventHandler appends without checking for existing handlers, so a stale
+	// handler would leak and cause every event to be emitted twice into gows.events.
+	if gows.eventHandlerID != 0 {
+		gows.RemoveEventHandler(gows.eventHandlerID)
+	}
 	gows.eventHandlerID = gows.AddEventHandler(gows.handleEvent)
 
 	// Not connected, listen for QR code events
@@ -108,7 +121,48 @@ func (gows *GoWS) Start() error {
 		gows.listenQRCodeEvents()
 	}
 
-	return gows.Connect()
+	if err := gows.Connect(); err != nil {
+		return err
+	}
+
+	// Ensure the NCT salt is populated for already-registered sessions.
+	// Sessions upgraded to DB schema v14 have an empty whatsmeow_nct_salt table.
+	// The regular on-connect FetchAppState uses onlyIfNotSynced=true and skips
+	// regular_high when its version is already > 0, so the salt is never written.
+	// Without the salt, generateCsToken returns nil; if tctoken is also absent,
+	// WhatsApp rejects every outbound DM with error 400 until the session is
+	// restarted (which triggers handleAppStateNotification with onlyIfNotSynced=false).
+	// We reproduce that forced re-sync here so the session heals on its own.
+	if gows.Store.ID != nil {
+		go gows.ensureNCTSalt()
+	}
+
+	return nil
+}
+
+// ensureNCTSalt forces a regular_high app-state sync when the NCT salt table
+// is empty. It waits a short time after Connect() to let whatsmeow complete its
+// own post-connect sync before checking.
+func (gows *GoWS) ensureNCTSalt() {
+	select {
+	case <-gows.Context.Done():
+		return
+	case <-time.After(5 * time.Second):
+	}
+
+	salt, err := gows.Store.NCTSalt.GetNCTSalt(gows.Context)
+	if err != nil {
+		gows.Log.Errorf("Failed to read NCT salt: %v", err)
+		return
+	}
+	if len(salt) > 0 {
+		return
+	}
+
+	gows.Log.Infof("NCT salt is empty — forcing regular_high app-state sync")
+	if err := gows.FetchAppState(gows.Context, appstate.WAPatchRegularHigh, false, false); err != nil {
+		gows.Log.Errorf("Failed to force regular_high app-state sync: %v", err)
+	}
 }
 
 func (gows *GoWS) listenQRCodeEvents() {
@@ -142,6 +196,10 @@ func (gows *GoWS) Stop() {
 	gows.InitialAutoReconnect = false
 	if gows.eventHandlerID != 0 {
 		gows.RemoveEventHandler(gows.eventHandlerID)
+	}
+
+	if gows.Calls != nil {
+		gows.Calls.Shutdown()
 	}
 
 	gows.Disconnect()
@@ -215,6 +273,7 @@ func BuildSession(
 		0,
 		sync.Map{},
 		retryEventsCache,
+		nil,
 	}
 	if storageCfg == (StorageConfig{}) {
 		storageCfg = DefaultStorageConfig()
@@ -226,6 +285,7 @@ func BuildSession(
 		storage:    gows.Storage,
 		ignoreJids: ignoreJids,
 	}
+	gows.Calls = callctl.NewController(gows.Client, slog.Default(), gows.emitEvent)
 	gows.GetMessageForRetry = gows.storageEventHandler.GetMessageForRetry
 	gows.BackgroundEventCtx = gows.Context
 	return gows, nil

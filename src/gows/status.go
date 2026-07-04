@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-const StatusParticipantsBatchSize = 5_000
-
 // SendStatusMessage sends a status message to a Broadcast list.
 func (gows *GoWS) SendStatusMessage(ctx context.Context, to types.JID, msg *waE2E.Message, extra whatsmeow.SendRequestExtra) (*whatsmeow.SendResponse, error) {
 	var err error
@@ -34,7 +32,7 @@ func (gows *GoWS) SendStatusMessage(ctx context.Context, to types.JID, msg *waE2
 		return p.Server == types.DefaultUserServer
 	})
 
-	participantsBatchSize := StatusParticipantsBatchSize
+	participantsBatchSize := statusParticipantsBatchSize
 	if len(extra.Participants) > 0 {
 		// If participants are provided, use the batch size of the participants
 		participantsBatchSize = len(extra.Participants)

@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"time"
 
 	"github.com/devlikeapro/gows/storage"
 	__ "github.com/devlikeapro/gows/proto"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/grpc/codes"
@@ -75,6 +77,17 @@ func (s *Server) DownloadMedia(ctx context.Context, req *__.DownloadMediaRequest
 			return nil, status.Error(codes.DeadlineExceeded, "download media timed out")
 		}
 		cli.Log.Errorf("Failed to download media for '%s' message: %v", req.MessageId, err)
+		// Definitive media errors: the CDN rejected or lost the object and the
+		// anonymous + media-retry fallbacks could not recover it. These are not
+		// transient, so surface a non-retriable status to stop the caller from
+		// re-issuing the call (each attempt can block on a media-retry wait).
+		switch {
+		case errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403):
+			return nil, status.Errorf(codes.FailedPrecondition, "failed to download media: %v", err)
+		case errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith404),
+			errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith410):
+			return nil, status.Errorf(codes.NotFound, "failed to download media: %v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "failed to download media: %v", err)
 	}
 	if req.GetContentPath() != "" {

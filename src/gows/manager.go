@@ -77,6 +77,14 @@ func SetDeviceAndBrowser(device string, browser string) {
 	store.SetOSInfo(device, [3]uint32{22, 0, 4})
 }
 
+// statusParticipantsBatchSize is the number of contacts per batch when sending to status@broadcast.
+// Set at startup via SetStatusParticipantsBatchSize; defaults to 500.
+var statusParticipantsBatchSize = 500
+
+func SetStatusParticipantsBatchSize(n int) {
+	statusParticipantsBatchSize = n
+}
+
 func GetDeviceProps() *waCompanionReg.DeviceProps {
 	return store.DeviceProps
 }

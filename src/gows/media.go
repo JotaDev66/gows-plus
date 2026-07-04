@@ -15,51 +15,94 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 )
 
+// mediaDownloader downloads a single downloadable media part. The two
+// implementations are whatsmeow's authenticated Download and the anonymous
+// signed-path DownloadAnonymous fallback.
+type mediaDownloader func(ctx context.Context, msg whatsmeow.DownloadableMessage) ([]byte, error)
+
 func (gows *GoWS) DownloadAnyMedia(ctx context.Context, msg *waE2E.Message) (data []byte, err error) {
+	return gows.downloadAnyMedia(ctx, msg, gows.Download)
+}
+
+// DownloadAnyMediaAnonymous mirrors DownloadAnyMedia but downloads via the plain
+// signed directPath (oh/oe) without the authenticated MMS parameters. Used as a
+// fallback on HTTP 403.
+func (gows *GoWS) DownloadAnyMediaAnonymous(ctx context.Context, msg *waE2E.Message) (data []byte, err error) {
+	return gows.downloadAnyMedia(ctx, msg, gows.DownloadAnonymous)
+}
+
+func (gows *GoWS) downloadAnyMedia(ctx context.Context, msg *waE2E.Message, download mediaDownloader) (data []byte, err error) {
 	target := unwrapMediaMessage(msg)
 	if target == nil {
 		return nil, whatsmeow.ErrNothingDownloadableFound
 	}
 	switch {
 	case target.ImageMessage != nil:
-		return gows.Download(ctx, target.ImageMessage)
+		return download(ctx, target.ImageMessage)
 	case target.VideoMessage != nil:
-		return gows.Download(ctx, target.VideoMessage)
+		return download(ctx, target.VideoMessage)
 	case target.PtvMessage != nil:
-		return gows.Download(ctx, target.PtvMessage)
+		return download(ctx, target.PtvMessage)
 	case target.AudioMessage != nil:
-		return gows.Download(ctx, target.AudioMessage)
+		return download(ctx, target.AudioMessage)
 	case target.DocumentMessage != nil:
-		return gows.Download(ctx, target.DocumentMessage)
+		return download(ctx, target.DocumentMessage)
 	case target.DocumentWithCaptionMessage != nil:
-		return gows.Download(ctx, target.DocumentWithCaptionMessage.Message.DocumentMessage)
+		return download(ctx, target.DocumentWithCaptionMessage.Message.DocumentMessage)
 	case target.StickerMessage != nil:
-		return gows.Download(ctx, target.StickerMessage)
+		return download(ctx, target.StickerMessage)
 	default:
 		return nil, whatsmeow.ErrNothingDownloadableFound
 	}
 }
 
-// DownloadAnyMediaWithRetry wraps DownloadAnyMedia and, on HTTP 403, requests the
-// sender's phone to re-upload the media via whatsmeow's media-retry protocol.
+// DownloadAnyMediaWithRetry wraps DownloadAnyMedia and, on HTTP 403 or a CDN
+// hash mismatch (ErrInvalidMediaEncSHA256), requests the sender's phone to
+// re-upload the media via whatsmeow's media-retry protocol.
 // On a successful retry the fresh DirectPath is used for a second download attempt.
+//
+// ErrInvalidMediaEncSHA256 ("hash of media ciphertext doesn't match") means the
+// CDN object at the message's directPath has been replaced with a different upload
+// (e.g. a forwarded image whose original CDN slot was recycled).  The phone
+// re-uploads and returns a fresh path — same recovery path as the 403 case.
 func (gows *GoWS) DownloadAnyMediaWithRetry(
 	ctx context.Context,
 	msg *waE2E.Message,
 	info *types.MessageInfo,
 ) ([]byte, error) {
 	data, err := gows.DownloadAnyMedia(ctx, msg)
-	if !errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) {
+	if err == nil {
+		return data, nil
+	}
+
+	// On HTTP 403 the authenticated MMS download was rejected even though the
+	// message's signed directPath (oh/oe) is frequently still valid. Try an
+	// anonymous download of the plain signed path before bothering the phone:
+	// this recovers the common "document 403" case instantly, without a
+	// media-retry round-trip to the phone (which images/videos never need).
+	if errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) {
+		gows.Log.Infof("Got 403 for '%s', trying anonymous signed-path download", info.ID)
+		anonData, anonErr := gows.DownloadAnyMediaAnonymous(ctx, msg)
+		if anonErr == nil {
+			gows.Log.Infof("Anonymous signed-path download recovered '%s'", info.ID)
+			return anonData, nil
+		}
+		gows.Log.Warnf("Anonymous signed-path download for '%s' failed: %v", info.ID, anonErr)
+	}
+
+	retriable := errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) ||
+		errors.Is(err, whatsmeow.ErrInvalidMediaEncSHA256)
+	if !retriable {
 		return data, err
 	}
 
 	mediaKey := extractMediaKey(msg)
 	if len(mediaKey) == 0 {
-		gows.Log.Warnf("No media key found for retry of '%s', returning original 403", info.ID)
+		gows.Log.Warnf("No media key found for retry of '%s', returning original error: %v", info.ID, err)
 		return nil, err
 	}
 
-	gows.Log.Infof("Got 403 for '%s', requesting media re-upload from phone", info.ID)
+	gows.Log.Infof("Got retriable media error for '%s' (%v), requesting media re-upload from phone", info.ID, err)
 	retryEvt, retryErr := gows.requestAndWaitForMediaRetry(ctx, info, mediaKey)
 	if retryErr != nil {
 		gows.Log.Errorf("Media retry request for '%s' failed: %v", info.ID, retryErr)
@@ -80,7 +123,38 @@ func (gows *GoWS) DownloadAnyMediaWithRetry(
 
 	gows.Log.Infof("Got new DirectPath for '%s', retrying download", info.ID)
 	updateDirectPath(msg, notification.GetDirectPath())
-	return gows.DownloadAnyMedia(ctx, msg)
+	data, err = gows.DownloadAnyMedia(ctx, msg)
+	if err == nil {
+		// Persist the fresh DirectPath so that a later fetch of this message
+		// (which reads from storage) returns the recovered media instead of the
+		// stale, expired path that originally 403'd.
+		gows.persistRefreshedDirectPath(info.ID, notification.GetDirectPath())
+	}
+	return data, err
+}
+
+// persistRefreshedDirectPath writes a DirectPath obtained from a media retry back
+// to the stored message, so subsequent re-fetches return the recovered media.
+// Best-effort: any failure is logged and swallowed.
+func (gows *GoWS) persistRefreshedDirectPath(id types.MessageID, directPath string) {
+	if directPath == "" || gows.Storage == nil || gows.Storage.Messages == nil {
+		return
+	}
+	stored, err := gows.Storage.Messages.GetMessage(id)
+	if err != nil {
+		gows.Log.Warnf("Failed to load message '%s' to persist refreshed DirectPath: %v", id, err)
+		return
+	}
+	if stored == nil || stored.Message == nil {
+		return
+	}
+	updateDirectPath(stored.Message.Message, directPath)
+	updateDirectPath(stored.Message.RawMessage, directPath)
+	if err := gows.Storage.Messages.UpsertOneMessage(stored); err != nil {
+		gows.Log.Warnf("Failed to persist refreshed DirectPath for '%s': %v", id, err)
+		return
+	}
+	gows.Log.Infof("Persisted refreshed DirectPath for '%s'", id)
 }
 
 // requestAndWaitForMediaRetry sends a media-retry receipt to the phone (at most once

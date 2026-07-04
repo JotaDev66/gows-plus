@@ -18,6 +18,22 @@ func getClientConfig() ClientConfig {
 	return cfg
 }
 
+// StatusConfig holds environment-variable overrides for status broadcast sending.
+type StatusConfig struct {
+	// ParticipantsBatchSize controls how many contacts are included per batch
+	// when sending a status/story to status@broadcast.
+	// Lowered from 5000 to 500 to avoid gRPC batch timeout errors on large contact lists.
+	ParticipantsBatchSize int `env:"WAHA_GOWS_STATUS_PARTICIPANTS_BATCH_SIZE" envDefault:"500"`
+}
+
+func getStatusConfig() StatusConfig {
+	cfg := StatusConfig{}
+	if err := env.Parse(&cfg); err != nil {
+		panic(err)
+	}
+	return cfg
+}
+
 // DevicePropsConfig holds optional overrides for waCompanionReg.DeviceProps.
 // Each Maybe field has three states:
 //
