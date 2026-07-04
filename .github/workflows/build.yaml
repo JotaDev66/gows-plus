@@ -6,7 +6,7 @@ on:
       - '*'
 
 env:
-  TARGET_REPO: devlikeapro/gows-plus
+  TARGET_REPO: JotaDev66/gows-plus
   PROTO_SRC_DIR: proto
 
 jobs:
@@ -86,6 +86,14 @@ jobs:
 #          gh release create "$RELEASE_TAG" \
 #            --repo "$TARGET_REPO" \
 #            --title "$RELEASE_TAG"
+
+      - name: Create new release (if missing)
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$TARGET_REPO" >/dev/null 2>&1 || \
+          gh release create "$RELEASE_TAG" \
+            --repo "$TARGET_REPO" \
+            --title "$RELEASE_TAG" \
+            --notes "Native audio calls build"
 
       - name: Upload release assets
         run: |
