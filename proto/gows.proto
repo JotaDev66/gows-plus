@@ -177,6 +177,7 @@ service MessageService {
   rpc StartCall(StartCallRequest) returns (StartCallResponse);
   rpc AcceptCall(AcceptCallRequest) returns (Empty);
   rpc EndCall(EndCallRequest) returns (Empty);
+  rpc WebRTC(WebRTCRequest) returns (WebRTCResponse);
 
   //
   // Storage
@@ -816,6 +817,17 @@ message AcceptCallRequest {
 message EndCallRequest {
   Session session = 1;
   string id = 2;
+}
+
+// WebRTCRequest exchanges the browser SDP for a call's PCM data-channel bridge.
+message WebRTCRequest {
+  Session session = 1;
+  string id = 2;
+  string sdpOffer = 3;
+}
+
+message WebRTCResponse {
+  string sdpAnswer = 1;
 }
 
 //

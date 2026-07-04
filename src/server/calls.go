@@ -69,3 +69,18 @@ func (s *Server) EndCall(ctx context.Context, req *__.EndCallRequest) (*__.Empty
 	}
 	return &__.Empty{}, nil
 }
+
+func (s *Server) WebRTC(ctx context.Context, req *__.WebRTCRequest) (*__.WebRTCResponse, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	if cli.Calls == nil {
+		return nil, fmt.Errorf("call controller not available for session")
+	}
+	answer, err := cli.Calls.WebRTC(req.GetId(), req.GetSdpOffer())
+	if err != nil {
+		return nil, err
+	}
+	return &__.WebRTCResponse{SdpAnswer: answer}, nil
+}
