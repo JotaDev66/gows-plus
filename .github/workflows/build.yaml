@@ -65,8 +65,11 @@ jobs:
     name: Publish Release
     needs: [ build-binaries, collect-proto ]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download all artifacts
@@ -74,12 +77,8 @@ jobs:
         with:
           path: artifacts
 
-      - name: Setup GitHub CLI
-        env:
-          CLI_GH_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
-        run: |
-          gh auth login --with-token <<< "$CLI_GH_TOKEN"
-          gh config set prompt disabled
+      - name: Configure GitHub CLI
+        run: gh config set prompt disabled
 
 #      - name: Create new release
 #        run: |
